@@ -6,19 +6,33 @@ playwright>=1.40.0
 
 # HTML Parsing
 beautifulsoup4>=4.12.2
-lxml>=5.1.0  # Parser rápido para BeautifulSoup
+lxml>=5.1.0
 
 # Environment Configuration
 python-dotenv>=1.0.0
 
-# HTTP Requests (backup/utilities)
+# HTTP Requests
 requests>=2.31.0
 
 # Data Export
-pandas>=2.2.0  # Para exportar a CSV/Excel (compatible con Python 3.13)
+pandas>=2.2.0
 
-# Type Checking (desarrollo)
+# === Web API ===
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic[email]>=2.0.0
+
+# === Authentication ===
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0
+python-multipart>=0.0.6
+
+# === Database ===
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0
+aiosqlite>=0.19.0
+
+# === Development ===
 mypy>=1.8.0
-
-# Linting (desarrollo)
 ruff>=0.1.9
