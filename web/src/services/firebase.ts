@@ -17,13 +17,13 @@ import type { User as FirebaseUser } from 'firebase/auth';
 
 // Firebase configuration
 const firebaseConfig = {
-    apiKey: "AIzaSyDR6ANToGfWbQ97Eq-0pLizz_hQlaaPFCQ",
-    authDomain: "sencker-a269e.firebaseapp.com",
-    projectId: "sencker-a269e",
-    storageBucket: "sencker-a269e.firebasestorage.app",
-    messagingSenderId: "508435567820",
-    appId: "1:508435567820:web:81a1c3bad4857a84cb9e69",
-    measurementId: "G-6T79GN6MRF"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
