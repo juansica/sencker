@@ -56,6 +56,7 @@ export function LoginForm({ onLogin, onLoginWithGoogle, onSwitchToRegister, erro
                         <input
                             id="password"
                             type="password"
+                            autoComplete="new-password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="••••••••"

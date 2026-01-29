@@ -3,42 +3,83 @@
  * Register and track court sentences
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { sentenciaApi, scraperApi, type Sentencia } from '../services/api';
 import './Pages.css';
-
-interface Sentencia {
-    id: string;
-    rol: string;
-    tribunal: string;
-    materia: string;
-    fechaSentencia: string;
-    estado: 'pendiente' | 'notificada' | 'ejecutoriada';
-    notas: string;
-}
 
 export function SentenciasPage() {
     const [sentencias, setSentencias] = useState<Sentencia[]>([]);
+    const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
-    const [formData, setFormData] = useState({
-        rol: '',
-        tribunal: '',
-        materia: '',
-        fechaSentencia: '',
-        notas: '',
-    });
+    const [rolSearch, setRolSearch] = useState('');
+    const [searching, setSearching] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    useEffect(() => {
+        loadSentencias();
+    }, []);
+
+    async function loadSentencias() {
+        try {
+            setLoading(true);
+            const data = await sentenciaApi.list();
+            setSentencias(data);
+        } catch (err) {
+            console.error(err);
+            setError('Error al cargar sentencias');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
+        setSearching(true);
 
-        const newSentencia: Sentencia = {
-            id: Date.now().toString(),
-            ...formData,
-            estado: 'pendiente',
-        };
+        try {
+            // 1. Iniciar tarea de scraping
+            // Import scraperApi dynamically or assume it's imported
+            const task = await scraperApi.run('civil', rolSearch);
 
-        setSentencias([newSentencia, ...sentencias]);
-        setFormData({ rol: '', tribunal: '', materia: '', fechaSentencia: '', notas: '' });
-        setShowForm(false);
+            // 2. Polling para esperar resultado
+            const checkStatus = async () => {
+                const status = await scraperApi.getStatus(task.id);
+
+                if (status.status === 'completed') {
+                    // Éxito: recargar tabla y cerrar modal
+                    await loadSentencias();
+                    setSearching(false);
+                    setShowForm(false);
+                    setRolSearch('');
+                } else if (status.status === 'failed') {
+                    setError(`Error en búsqueda: ${status.error}`);
+                    setSearching(false);
+                } else {
+                    // Seguir esperando
+                    setTimeout(checkStatus, 1000);
+                }
+            };
+
+            checkStatus();
+
+        } catch (err) {
+            console.error(err);
+            setError('Error al iniciar búsqueda en PJUD.');
+            setSearching(false);
+        }
+    };
+
+    const handleDelete = async (id: string, rol: string) => {
+        if (!confirm(`¿Estás seguro que deseas eliminar la Sentencia ${rol}?`)) return;
+
+        try {
+            await sentenciaApi.delete(id);
+            setSentencias(sentencias.filter(s => s.id !== id));
+        } catch (err) {
+            console.error(err);
+            setError('Error al eliminar la sentencia.');
+        }
     };
 
     return (
@@ -55,75 +96,41 @@ export function SentenciasPage() {
                 </div>
             </header>
 
+            {error && (
+                <div className="error-banner">
+                    {error} <button onClick={() => setError(null)}>×</button>
+                </div>
+            )}
+
             {showForm && (
                 <div className="modal-overlay">
                     <div className="modal">
                         <div className="modal-header">
-                            <h2>Registrar Sentencia</h2>
+                            <h2>Nueva Sentencia</h2>
                             <button className="modal-close" onClick={() => setShowForm(false)}>×</button>
                         </div>
-                        <form onSubmit={handleSubmit} className="form">
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label>ROL</label>
-                                    <input
-                                        type="text"
-                                        value={formData.rol}
-                                        onChange={(e) => setFormData({ ...formData, rol: e.target.value })}
-                                        placeholder="C-1234-2024"
-                                        required
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Tribunal</label>
-                                    <input
-                                        type="text"
-                                        value={formData.tribunal}
-                                        onChange={(e) => setFormData({ ...formData, tribunal: e.target.value })}
-                                        placeholder="1° Juzgado Civil de Santiago"
-                                        required
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label>Materia</label>
-                                    <input
-                                        type="text"
-                                        value={formData.materia}
-                                        onChange={(e) => setFormData({ ...formData, materia: e.target.value })}
-                                        placeholder="Cobro de pesos"
-                                        required
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Fecha Sentencia</label>
-                                    <input
-                                        type="date"
-                                        value={formData.fechaSentencia}
-                                        onChange={(e) => setFormData({ ...formData, fechaSentencia: e.target.value })}
-                                        required
-                                    />
-                                </div>
-                            </div>
-
+                        <form onSubmit={handleSearch} className="form">
                             <div className="form-group">
-                                <label>Notas</label>
-                                <textarea
-                                    value={formData.notas}
-                                    onChange={(e) => setFormData({ ...formData, notas: e.target.value })}
-                                    placeholder="Notas adicionales..."
-                                    rows={3}
-                                />
+                                <label>ROL de la Causa</label>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <input
+                                        type="text"
+                                        value={rolSearch}
+                                        onChange={(e) => setRolSearch(e.target.value)}
+                                        placeholder="ej: C-1234-2024"
+                                        required
+                                        disabled={searching}
+                                    />
+                                </div>
+                                <p className="help-text">Ingresa el ROL. Buscaremos los datos automáticamente en el Poder Judicial.</p>
                             </div>
 
                             <div className="form-actions">
-                                <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
+                                <button type="button" className="btn-secondary" onClick={() => setShowForm(false)} disabled={searching}>
                                     Cancelar
                                 </button>
-                                <button type="submit" className="btn-primary">
-                                    Guardar
+                                <button type="submit" className="btn-primary" disabled={searching}>
+                                    {searching ? 'Buscando en PJUD...' : 'Buscar y Agregar'}
                                 </button>
                             </div>
                         </form>
@@ -131,7 +138,9 @@ export function SentenciasPage() {
                 </div>
             )}
 
-            {sentencias.length === 0 ? (
+            {loading ? (
+                <div className="loading-state">Cargando sentencias...</div>
+            ) : sentencias.length === 0 ? (
                 <div className="card">
                     <div className="empty-state">
                         <span className="empty-icon">⚖️</span>
@@ -149,8 +158,8 @@ export function SentenciasPage() {
                                 <th>ROL</th>
                                 <th>Tribunal</th>
                                 <th>Materia</th>
-                                <th>Fecha</th>
                                 <th>Estado</th>
+                                <th>Plazos</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -159,16 +168,30 @@ export function SentenciasPage() {
                                 <tr key={s.id}>
                                     <td className="font-mono">{s.rol}</td>
                                     <td>{s.tribunal}</td>
-                                    <td>{s.materia}</td>
-                                    <td>{new Date(s.fechaSentencia).toLocaleDateString('es-CL')}</td>
+                                    <td>{s.materia || '-'}</td>
                                     <td>
                                         <span className={`badge badge-${s.estado}`}>
                                             {s.estado}
                                         </span>
                                     </td>
                                     <td>
+                                        {s.plazos?.length > 0 ? (
+                                            <span className="badge badge-warning">{s.plazos.length} plazos</span>
+                                        ) : (
+                                            <span className="text-gray-400 text-sm">Sin plazos</span>
+                                        )}
+                                    </td>
+                                    <td>
                                         <button className="btn-icon" title="Ver detalles">👁️</button>
                                         <button className="btn-icon" title="Agregar plazo">📅</button>
+                                        <button
+                                            className="btn-icon btn-danger"
+                                            title="Eliminar sentencia"
+                                            onClick={() => handleDelete(s.id, s.rol)}
+                                            style={{ color: '#dc3545', marginLeft: '8px' }}
+                                        >
+                                            🗑️
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

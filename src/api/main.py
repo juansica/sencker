@@ -25,6 +25,10 @@ from src.database.database import init_db, close_db
 # Import routers
 from src.api.auth_routes import router as auth_router
 from src.api.scraper_routes import router as scraper_router
+from src.api.admin_routes import router as admin_router
+from src.api.webhook_routes import router as webhook_router
+from src.api.organization_routes import router as organization_router
+from src.api.sentencia_routes import router as sentencia_router
 
 
 @asynccontextmanager
@@ -73,6 +77,10 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router)
 app.include_router(scraper_router)
+app.include_router(admin_router)
+app.include_router(webhook_router)
+app.include_router(organization_router)
+app.include_router(sentencia_router)
 
 
 # ============ Health Check ============

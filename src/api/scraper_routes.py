@@ -7,16 +7,18 @@ API endpoints for scraper operations.
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from pydantic import BaseModel
+import asyncio
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.database import get_db
-from src.database.models import User, ScrapingTask, TaskStatus
+from src.database.models import User, ScrapingTask, TaskStatus, Sentencia, SentenciaStatus
 from src.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/scraper", tags=["Scraper"])
@@ -46,6 +48,16 @@ class TaskResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+    @field_validator("result", mode="before")
+    @classmethod
+    def parse_result(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return {}
+        return v
 
 
 class TaskListResponse(BaseModel):
@@ -86,11 +98,61 @@ async def run_scraper_task(task_id: str, db_url: str) -> None:
         
         try:
             # Run the actual scraper
-            from src.scrapers.civil_scraper import CivilScraper
+            def _run_sync_scraper(query: Optional[str]) -> dict:
+                from src.scrapers.civil_scraper import CivilScraper
+                with CivilScraper() as scraper:
+                    return scraper.run(search_query=query)
+
+            loop = asyncio.get_running_loop()
+            scraper_result = await loop.run_in_executor(None, _run_sync_scraper, task.search_query)
             
-            with CivilScraper() as scraper:
-                scraper_result = scraper.run()
-            
+            # --- PROCESS RESULTS & CREATE SENTENCIAS ---
+            if "data" in scraper_result and isinstance(scraper_result["data"], list):
+                # Get user organization
+                user_result = await session.execute(
+                    select(User).where(User.id == task.user_id)
+                )
+                user = user_result.scalar_one_or_none()
+                
+                if user and user.organization_id:
+                    count_new = 0
+                    for item in scraper_result["data"]:
+                        rol = item.get("rol")
+                        if not rol:
+                            continue
+                            
+                        # Check existance
+                        existing = await session.execute(
+                            select(Sentencia).where(
+                                Sentencia.rol == rol,
+                                Sentencia.organization_id == user.organization_id
+                            )
+                        )
+                        if not existing.scalar_one_or_none():
+                            # Create new
+                            fecha_ingreso = None
+                            if item.get("fecha_ingreso"):
+                                try:
+                                    fecha_ingreso = datetime.fromisoformat(item["fecha_ingreso"])
+                                except:
+                                    pass
+
+                            new_sentencia = Sentencia(
+                                id=str(uuid.uuid4()),
+                                organization_id=user.organization_id,
+                                rol=rol,
+                                tribunal=item.get("tribunal", "Desconocido"),
+                                caratula=item.get("caratula"),
+                                materia=item.get("materia"),
+                                fecha_ingreso=fecha_ingreso or datetime.utcnow(),
+                                estado=SentenciaStatus.ACTIVA
+                            )
+                            session.add(new_sentencia)
+                            count_new += 1
+                    
+                    if count_new > 0:
+                        scraper_result["processed_info"] = f"Created {count_new} new Sentencias"
+
             # Update with results
             task.status = TaskStatus.COMPLETED
             task.result = json.dumps(scraper_result)

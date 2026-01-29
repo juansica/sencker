@@ -24,10 +24,18 @@
 /* Sidebar Header */
 .sidebar-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     padding: 1.25rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    gap: 0.5rem;
+}
+
+.sidebar-branding {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    overflow: hidden;
 }
 
 .sidebar-logo {
@@ -37,6 +45,14 @@
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
+}
+
+.user-email-header {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .sidebar.collapsed .sidebar-logo {

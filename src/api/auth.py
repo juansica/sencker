@@ -89,6 +89,37 @@ async def get_or_create_user(
     
     if not user:
         user = await create_user_from_firebase(db, token_data)
+        
+    # HEALING: If user has no organization, create one
+    if not user.organization_id:
+        from src.database.models import Organization, OrganizationConfig, UserRole
+        import uuid
+        
+        # Create default org
+        org_name = f"Organización de {user.full_name or user.email}"
+        org_slug = str(uuid.uuid4())[:8]  # Simple slug
+        
+        new_org = Organization(
+            id=str(uuid.uuid4()),
+            name=org_name,
+            slug=org_slug,
+            subdomain=org_slug
+        )
+        db.add(new_org)
+        await db.flush()  # We need the ID
+        
+        # Create config
+        new_config = OrganizationConfig(
+            organization_id=new_org.id
+        )
+        db.add(new_config)
+        
+        # Assign to user
+        user.organization_id = new_org.id
+        user.role = UserRole.OWNER
+        
+        await db.commit()
+        await db.refresh(user)
     
     return user
 

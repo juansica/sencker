@@ -37,9 +37,14 @@ export function Layout({ children, currentPage, onNavigate, userEmail, onLogout 
             {/* Sidebar */}
             <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
                 <div className="sidebar-header">
-                    <h1 className="sidebar-logo">
-                        {isSidebarCollapsed ? '🔍' : '🔍 Sencker'}
-                    </h1>
+                    <div className="sidebar-branding">
+                        <h1 className="sidebar-logo">
+                            {isSidebarCollapsed ? '🔍' : '🔍 Sencker'}
+                        </h1>
+                        {!isSidebarCollapsed && (
+                            <span className="user-email-header" title={userEmail}>{userEmail}</span>
+                        )}
+                    </div>
                     <button
                         className="sidebar-toggle"
                         onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -64,12 +69,6 @@ export function Layout({ children, currentPage, onNavigate, userEmail, onLogout 
                 </nav>
 
                 <div className="sidebar-footer">
-                    <div className="user-info" title={userEmail}>
-                        <span className="user-avatar">👤</span>
-                        {!isSidebarCollapsed && (
-                            <span className="user-email">{userEmail}</span>
-                        )}
-                    </div>
                     <button
                         className="logout-btn"
                         onClick={onLogout}

@@ -101,3 +101,68 @@ export const checkHealth = async (): Promise<boolean> => {
         return false;
     }
 };
+
+// ==========================================
+// Sentencias & Plazos API
+// ==========================================
+
+export type SentenciaStatus = 'activa' | 'archivada' | 'suspendida';
+export type PlazoStatus = 'pendiente' | 'cumplido' | 'vencido' | 'cancelado';
+
+export interface Plazo {
+    id: string;
+    sentencia_id: string;
+    descripcion: string;
+    fecha_vencimiento: string;
+    tipo: string;
+    estado: PlazoStatus;
+    is_fatal: boolean;
+}
+
+export interface Sentencia {
+    id: string;
+    rol: string;
+    tribunal: string;
+    materia?: string;
+    estado: SentenciaStatus;
+    fecha_ingreso?: string;
+    plazos: Plazo[];
+}
+
+export interface DashboardLegalStats {
+    total_sentencias: number;
+    total_plazos_activos: number;
+    plazos_vencidos: number;
+    plazos_proximos: number;
+}
+
+export const sentenciaApi = {
+    async list(search?: string): Promise<Sentencia[]> {
+        const query = search ? `?search=${encodeURIComponent(search)}` : '';
+        return apiRequest<Sentencia[]>(`/api/sentencias${query}`);
+    },
+
+    async create(data: { rol: string; tribunal: string; materia?: string; fecha_ingreso?: string }): Promise<Sentencia> {
+        return apiRequest<Sentencia>('/api/sentencias', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    },
+
+    async delete(id: string): Promise<void> {
+        await apiRequest(`/api/sentencias/${id}`, {
+            method: 'DELETE',
+        });
+    },
+
+    async addPlazo(sentenciaId: string, data: { descripcion: string; fecha_vencimiento: string; is_fatal: boolean }): Promise<Plazo> {
+        return apiRequest<Plazo>(`/api/sentencias/${sentenciaId}/plazos`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    },
+
+    async getStats(): Promise<DashboardLegalStats> {
+        return apiRequest<DashboardLegalStats>('/api/sentencias/stats');
+    }
+};
