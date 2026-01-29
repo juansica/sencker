@@ -114,7 +114,7 @@ export function useAuth(): AuthState & AuthActions {
 // Format Firebase error messages for display
 function formatFirebaseError(message: string): string {
     if (message.includes('email-already-in-use')) {
-        return 'Este email ya está registrado';
+        return 'Este email ya está registrado. ¿Quizás iniciaste sesión con Google anteriormente?';
     }
     if (message.includes('invalid-email')) {
         return 'Email inválido';
@@ -123,10 +123,16 @@ function formatFirebaseError(message: string): string {
         return 'La contraseña debe tener al menos 6 caracteres';
     }
     if (message.includes('user-not-found') || message.includes('wrong-password') || message.includes('invalid-credential')) {
-        return 'Email o contraseña incorrectos';
+        return 'Email o contraseña incorrectos. Si usaste Google, presiona "Continuar con Google".';
+    }
+    if (message.includes('account-exists-with-different-credential')) {
+        return 'Ya existe una cuenta con este email. Por favor inicia sesión con tu método anterior (Google/Email).';
     }
     if (message.includes('popup-closed-by-user')) {
         return 'Inicio de sesión cancelado';
     }
-    return message;
+    if (message.includes('popup-blocked')) {
+        return 'El navegador bloqueó la ventana emergente. Por favor permítela e intenta de nuevo.';
+    }
+    return 'Ocurrió un error. Por favor intenta nuevamente.';
 }
