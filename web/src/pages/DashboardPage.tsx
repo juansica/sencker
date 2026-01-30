@@ -52,7 +52,7 @@ export function DashboardPage() {
                     <div className="stat-icon">⚖️</div>
                     <div className="stat-content">
                         <span className="stat-value">{displayStats.total_sentencias}</span>
-                        <span className="stat-label">Sentencias Registradas</span>
+                        <span className="stat-label">Causas Registradas</span>
                     </div>
                 </div>
 

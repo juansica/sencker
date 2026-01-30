@@ -98,13 +98,25 @@ async def run_scraper_task(task_id: str, db_url: str) -> None:
         
         try:
             # Run the actual scraper
-            def _run_sync_scraper(query: Optional[str]) -> dict:
+            def _run_sync_scraper(query: Optional[str], params_json: Optional[str]) -> dict:
                 from src.scrapers.civil_scraper import CivilScraper
+                
+                corte_id = "0"
+                tribunal_id = "0"
+                if params_json:
+                    try:
+                        params = json.loads(params_json)
+                        if isinstance(params, dict):
+                            corte_id = params.get("corte_id", "0")
+                            tribunal_id = params.get("tribunal_id", "0")
+                    except:
+                        pass
+                
                 with CivilScraper() as scraper:
-                    return scraper.run(search_query=query)
+                    return scraper.run(search_query=query, corte_id=corte_id, tribunal_id=tribunal_id)
 
             loop = asyncio.get_running_loop()
-            scraper_result = await loop.run_in_executor(None, _run_sync_scraper, task.search_query)
+            scraper_result = await loop.run_in_executor(None, _run_sync_scraper, task.search_query, task.search_params)
             
             # --- PROCESS RESULTS & CREATE SENTENCIAS ---
             if "data" in scraper_result and isinstance(scraper_result["data"], list):
@@ -128,15 +140,24 @@ async def run_scraper_task(task_id: str, db_url: str) -> None:
                                 Sentencia.organization_id == user.organization_id
                             )
                         )
-                        if not existing.scalar_one_or_none():
-                            # Create new
-                            fecha_ingreso = None
-                            if item.get("fecha_ingreso"):
-                                try:
-                                    fecha_ingreso = datetime.fromisoformat(item["fecha_ingreso"])
-                                except:
-                                    pass
+                        existing_sentencia = existing.scalar_one_or_none()
+                        
+                        # Parse dates securely
+                        fecha_ingreso = None
+                        if item.get("fecha_ingreso"):
+                            try:
+                                # Try multiple formats
+                                for fmt in ["%d/%m/%Y", "%Y-%m-%d"]:
+                                    try:
+                                        fecha_ingreso = datetime.strptime(item["fecha_ingreso"], fmt)
+                                        break
+                                    except:
+                                        pass
+                            except:
+                                pass
 
+                        if not existing_sentencia:
+                            # Create new
                             new_sentencia = Sentencia(
                                 id=str(uuid.uuid4()),
                                 organization_id=user.organization_id,
@@ -145,10 +166,37 @@ async def run_scraper_task(task_id: str, db_url: str) -> None:
                                 caratula=item.get("caratula"),
                                 materia=item.get("materia"),
                                 fecha_ingreso=fecha_ingreso or datetime.utcnow(),
-                                estado=SentenciaStatus.ACTIVA
+                                estado=SentenciaStatus.ACTIVA,
+                                # New detailed fields from PJUD modal
+                                estado_administrativo=item.get("estado_administrativo"),
+                                procedimiento=item.get("procedimiento"),
+                                ubicacion=item.get("ubicacion"),
+                                estado_procesal=item.get("estado_procesal"),
+                                etapa=item.get("etapa"),
+                                litigantes=item.get("litigantes", []),
+                                historia=item.get("historia", []),
+                                cuadernos=item.get("cuadernos", [])
                             )
                             session.add(new_sentencia)
                             count_new += 1
+                            print(f"[DEBUG] Created new Sentencia {rol} with {len(item.get('litigantes',[]))} litigantes")
+                        else:
+                            # Update existing
+                            print(f"[DEBUG] Updating existing Sentencia {rol}")
+                            existing_sentencia.tribunal = item.get("tribunal", existing_sentencia.tribunal)
+                            existing_sentencia.caratula = item.get("caratula", existing_sentencia.caratula)
+                            existing_sentencia.estado_administrativo = item.get("estado_administrativo")
+                            existing_sentencia.procedimiento = item.get("procedimiento")
+                            existing_sentencia.ubicacion = item.get("ubicacion")
+                            existing_sentencia.estado_procesal = item.get("estado_procesal")
+                            existing_sentencia.etapa = item.get("etapa")
+                            existing_sentencia.litigantes = item.get("litigantes", [])
+                            existing_sentencia.historia = item.get("historia", [])
+                            existing_sentencia.cuadernos = item.get("cuadernos", [])
+                            if fecha_ingreso:
+                                existing_sentencia.fecha_ingreso = fecha_ingreso
+                            
+                            existing_sentencia.updated_at = datetime.utcnow()
                     
                     if count_new > 0:
                         scraper_result["processed_info"] = f"Created {count_new} new Sentencias"

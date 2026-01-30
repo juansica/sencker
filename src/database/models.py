@@ -547,6 +547,18 @@ class Sentencia(Base):
         default=SentenciaStatus.ACTIVA
     )
     
+    # Detailed PJUD Info (from modal)
+    estado_administrativo: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # e.g., "Sin archivar"
+    procedimiento: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # e.g., "Ejecutivo Obligación de Dar"
+    ubicacion: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Physical/digital location
+    estado_procesal: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # e.g., "Tramitación"
+    etapa: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # e.g., "Contestación Excepciones"
+    
+    # Detailed data stored as JSON
+    litigantes: Mapped[Optional[list[dict]]] = mapped_column(JSON, nullable=True, default=list)  # Array of parties
+    historia: Mapped[Optional[list[dict]]] = mapped_column(JSON, nullable=True, default=list)  # Array of history events
+    cuadernos: Mapped[Optional[list[dict]]] = mapped_column(JSON, nullable=True, default=list)  # Array of cuadernos with their own histories
+    
     # Metadata
     fecha_ingreso: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     custom_tags: Mapped[Optional[str]] = mapped_column(JSON, default=list)  # ["urgent", "civil"]

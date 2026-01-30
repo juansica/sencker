@@ -25,12 +25,13 @@ interface NavItem {
 
 const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'sentencias', label: 'Sentencias', icon: '⚖️' },
+    { id: 'sentencias', label: 'Causas', icon: '⚖️' },
     { id: 'plazos', label: 'Plazos', icon: '📅' },
 ];
 
 export function Layout({ children, currentPage, onNavigate, userEmail, onLogout }: LayoutProps) {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [showNotifications, setShowNotifications] = useState(false);
 
     return (
         <div className="app-layout">
@@ -81,8 +82,38 @@ export function Layout({ children, currentPage, onNavigate, userEmail, onLogout 
 
             {/* Main content */}
             <main className="main-content">
+                {/* Top bar with notifications */}
+                <div className="top-bar">
+                    <div className="top-bar-spacer"></div>
+                    <button
+                        className="notifications-btn"
+                        onClick={() => setShowNotifications(true)}
+                        title="Notificaciones"
+                    >
+                        🔔
+                        <span className="notification-badge">3</span>
+                    </button>
+                </div>
+
                 {children}
             </main>
+
+            {/* Notifications Modal (placeholder) */}
+            {showNotifications && (
+                <div className="modal-overlay" onClick={() => setShowNotifications(false)}>
+                    <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                        <div className="modal-header">
+                            <h2>🔔 Notificaciones</h2>
+                            <button className="modal-close" onClick={() => setShowNotifications(false)}>×</button>
+                        </div>
+                        <div className="modal-body" style={{ padding: '20px' }}>
+                            <p style={{ color: '#888', textAlign: 'center' }}>
+                                Próximamente: Sistema de notificaciones
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

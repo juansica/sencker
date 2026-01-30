@@ -57,6 +57,16 @@ class SentenciaResponse(SentenciaCreate):
     organization_id: str
     estado: SentenciaStatus
     caratula: Optional[str]
+    # Detailed PJUD info
+    estado_administrativo: Optional[str] = None
+    procedimiento: Optional[str] = None
+    ubicacion: Optional[str] = None
+    estado_procesal: Optional[str] = None
+    etapa: Optional[str] = None
+    litigantes: Optional[List[dict]] = []
+    historia: Optional[List[dict]] = []
+    cuadernos: Optional[List[dict]] = []
+    
     plazos: List[PlazoResponse] = []
     created_at: datetime
     updated_at: datetime
@@ -252,19 +262,7 @@ async def delete_sentencia(
             detail="Sentencia not found"
         )
     
-    # Soft Delete Implementation: Change status to ARCHIVADA
-    # sentencia.estado = SentenciaStatus.ARCHIVADA
-    
-    # Wait, user said "soft delete" but usually "delete button" implies removal from view.
-    # If we archive it, it will disappear from main list if we filter by ACTIVA.
-    # Let's verify `list_sentencias` implementation. 
-    # It lists all by default unless filtered? No, it lists all. 
-    # Let's check `list_sentencias`. 
-    # Ah, `list_sentencias` optionally filters by status.
-    # If UI doesn't filter, archived will show up.
-    # For now, let's implement true Delete (Hard) if it's just a demo/MVP, 
-    # OR implement Soft Delete and ensure UI filters.
-    # User specifically asked for "Soft delete".
-    
-    sentencia.estado = SentenciaStatus.ARCHIVADA
+    # Hard Delete Implementation as per user feedback ("deleting... is not working")
+    # Soft delete (ARCHIVADA) was causing items to remain in the list view.
+    await db.delete(sentencia)
     await db.commit()

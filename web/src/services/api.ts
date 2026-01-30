@@ -72,10 +72,14 @@ export const authApi = {
 
 // Scraper API
 export const scraperApi = {
-    async run(taskType: string = 'civil', searchQuery?: string): Promise<ScrapingTask> {
+    async run(taskType: string = 'civil', searchQuery?: string, searchParams?: any): Promise<ScrapingTask> {
         return apiRequest<ScrapingTask>('/api/scraper/run', {
             method: 'POST',
-            body: JSON.stringify({ task_type: taskType, search_query: searchQuery }),
+            body: JSON.stringify({
+                task_type: taskType,
+                search_query: searchQuery,
+                search_params: searchParams
+            }),
         });
     },
 
@@ -119,13 +123,50 @@ export interface Plazo {
     is_fatal: boolean;
 }
 
+export interface Litigante {
+    participante: string;  // DDO, DTE, AB
+    rut?: string;
+    tipo_persona?: string;  // Natural, Jurídica
+    nombre: string;
+}
+
+export interface HistoriaItem {
+    folio?: string;
+    etapa?: string;
+    tramite: string;
+    descripcion: string;
+    fecha: string;
+    foja?: string;
+}
+
+export interface Cuaderno {
+    id: string;
+    nombre: string;
+    header: any; // Contains Etapa, Estado, etc specific to this cuaderno
+    litigantes: Litigante[];
+    historia: HistoriaItem[];
+}
+
 export interface Sentencia {
     id: string;
     rol: string;
     tribunal: string;
+    caratula?: string;
     materia?: string;
     estado: SentenciaStatus;
     fecha_ingreso?: string;
+    // Detailed PJUD info
+    estado_administrativo?: string;
+    procedimiento?: string;
+    ubicacion?: string;
+    estado_procesal?: string;
+    etapa?: string;
+    litigantes?: Litigante[];
+    historia?: HistoriaItem[];
+    cuadernos?: Cuaderno[];
+    // Timestamps
+    updated_at?: string;
+    // Related
     plazos: Plazo[];
 }
 
