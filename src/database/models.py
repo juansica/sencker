@@ -467,6 +467,10 @@ class ScrapingTask(Base):
         String(500),
         nullable=True
     )
+    progress_message: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True
+    )
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -540,6 +544,8 @@ class Sentencia(Base):
     tribunal: Mapped[str] = mapped_column(String(255), nullable=False)
     caratula: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     materia: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    scraping_task_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     
     # Status
     estado: Mapped[SentenciaStatus] = mapped_column(

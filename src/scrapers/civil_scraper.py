@@ -53,14 +53,24 @@ class CivilScraper(BaseScraper):
             self.logger.error(f"Error parsing query '{search_query}': {e}")
             return None
 
-    def run(self, search_query: str, corte_id: str = "0", tribunal_id: str = "0"):
+    def run(self, search_query: str, corte_id: str = "0", tribunal_id: str = "0", on_progress: Optional[callable] = None):
         """
         Ejecuta el scraper para una causa Civil.
         search_query: string formato "C-1234-2023" (Letra-ROL-AÑO)
         corte_id: ID de la Corte (default "0" = Todos)
         tribunal_id: ID del Tribunal (default "0" = Todos)
+        on_progress: Callback function(message: str) -> None
         """
-        self.logger.info(f"Iniciando scraper Civiles con query: {search_query}, Corte: {corte_id}, Tribunal: {tribunal_id}")
+        
+        def report(msg):
+            self.logger.info(msg)
+            if on_progress:
+                try:
+                    on_progress(msg)
+                except Exception as e:
+                    self.logger.error(f"Error in progress callback: {e}")
+
+        report(f"Iniciando scraper Civiles con query: {search_query}")
         
         parse_result = self.parse_rol(search_query)
         if not parse_result:
@@ -72,7 +82,7 @@ class CivilScraper(BaseScraper):
         try:
             # 1. Navegar a la página
             url = "https://oficinajudicialvirtual.pjud.cl/indexN.php" 
-            self.logger.info(f"Navegando a: {url} (intento 1/3)")
+            report(f"Navegando a portal PJUD ({url})...")
             response = self.page.goto(url, timeout=60000, wait_until="domcontentloaded")
             
             if not response:
@@ -87,15 +97,24 @@ class CivilScraper(BaseScraper):
                 self.logger.info("URL actual: " + self.page.url)
                 # Intentar ir a Consulta Unificada o volver a indexN
                 try:
-                    # Buscar link a "Consulta de Causas" o similar si estamos en el dashboard
-                    consulta_link = self.page.locator("a:has-text('Consulta Unificada'), a:has-text('Consulta de Causas')").first
-                    if consulta_link.count() > 0:
-                        consulta_link.click()
-                    else:
-                        self.logger.info("Formulario no encontrado, buscando link de navegación...")
+                    # Primero intentar llamar a la función JS directamente
+                    self.logger.info("Intentando ejecutar accesoConsultaCausas()...")
+                    self.page.evaluate("if(typeof accesoConsultaCausas === 'function') { accesoConsultaCausas(); } else { throw new Error('Function not found'); }")
+                    self.page.wait_for_timeout(2000)
+                except Exception as e:
+                    self.logger.warning(f"Error ejecutando JS: {e}. Intentando click manual...")
+                    try:
+                        # Buscar link a "Consulta de Causas" o similar si estamos en el dashboard
+                        consulta_link = self.page.locator("a:has-text('Consulta Unificada'), a:has-text('Consulta de Causas'), button:has-text('Consulta causas'), text='Consulta de Causas'").first
+                        if consulta_link.count() > 0:
+                            self.logger.info("Clickeando 'Consulta de Causas'...")
+                            consulta_link.click()
+                        else:
+                            self.logger.info("Formulario no encontrado, buscando link de navegación...")
+                            self.page.goto("https://oficinajudicialvirtual.pjud.cl/indexN.php")
+                    except Exception as inner_e:
+                        self.logger.error(f"Error navegando manualmente: {inner_e}")
                         self.page.goto("https://oficinajudicialvirtual.pjud.cl/indexN.php")
-                except:
-                    self.page.goto("https://oficinajudicialvirtual.pjud.cl/indexN.php")
                 
                 self.page.wait_for_timeout(2000)
                 self.logger.info(f"Navegado a: {self.page.url}")
@@ -107,12 +126,21 @@ class CivilScraper(BaseScraper):
             # Los campos se cargan dinámicamente via Ajax, hay que esperar entre cada selección
             
             # 3.1 Seleccionar Competencia: Civil (valor "3")
-            competencia_select = self.page.locator("select#competencia")
-            if competencia_select.count() > 0:
-                competencia_select.select_option("3")  # Civil = valor 3
-                self.logger.info("Competencia seleccionada: Civil")
-                # IMPORTANTE: Esperar a que los campos dependientes se carguen via Ajax
-                self.page.wait_for_timeout(1500)
+            try:
+                # Wait for the main select to be present, this confirms we are on the form
+                competencia_select = self.page.locator("select#competencia")
+                competencia_select.wait_for(state="attached", timeout=10000)
+                
+                if competencia_select.count() > 0:
+                    competencia_select.select_option("3")  # Civil = valor 3
+                    report("Competencia seleccionada: Civil")
+                    # IMPORTANTE: Esperar a que los campos dependientes se carguen via Ajax
+                    self.page.wait_for_timeout(2000)
+            except Exception as e:
+                self.logger.error(f"No se pudo seleccionar competencia (Formulario no cargado?): {e}")
+                # Try to take screenshot to debug
+                self.take_screenshot("debug_form_not_found")
+                return {"status": "error", "error": f"Form not found: {e}"}
             
             # 3.2 Seleccionar Corte
             try:
@@ -155,7 +183,7 @@ class CivilScraper(BaseScraper):
                 if rol_input.count() > 0:
                     rol_input.wait_for(state="visible", timeout=5000)
                     rol_input.fill(rol_num)
-                    self.logger.info(f"ROL ingresado: {rol_num}")
+                    report(f"Ingresando ROL: {rol_num}")
             except Exception as e:
                 self.logger.warning(f"No se pudo ingresar ROL: {e}")
             
@@ -174,7 +202,7 @@ class CivilScraper(BaseScraper):
                 buscar_btn = self.page.locator("button#btnConsulta, input#btnConsulta, #btnConsulta")
                 if buscar_btn.count() > 0:
                     buscar_btn.click()
-                    self.logger.info("Botón buscar clickeado")
+                    report("Consultando causas...")
                     self.page.wait_for_timeout(3000)  # Esperar resultados
             except Exception as e:
                 self.logger.error(f"Error clickeando buscar: {e}")
@@ -188,7 +216,7 @@ class CivilScraper(BaseScraper):
             result_rows = self.page.locator("tbody tr").filter(has=self.page.locator(".toggle-modal"))
             
             if result_rows.count() > 0:
-                self.logger.info(f"Encontradas {result_rows.count()} filas de resultados")
+                report(f"Encontradas {result_rows.count()} filas. Extrayendo detalles...")
                 
                 # Procesar SOLO la primera fila (ROL específico)
                 row = result_rows.first
@@ -199,6 +227,7 @@ class CivilScraper(BaseScraper):
                     "tribunal": "",
                     "caratula": "",
                     "materia": "",
+                    "url": self.page.url,
                     "fecha_ingreso": "",
                     "estado_administrativo": "",
                     "procedimiento": "",
@@ -284,12 +313,17 @@ class CivilScraper(BaseScraper):
                             try:
                                 c_id = opt['value']
                                 c_text = opt['text']
-                                self.logger.info(f"Scraping Cuaderno: {c_text} ({c_id})")
+                                report(f"Procesando Cuaderno: {c_text}...")
 
                                 # Select Cuaderno (if selector exists and is not just the dummy one)
                                 if cuaderno_select.count() > 0:
+                                    # Get current first row text to check for change later
+                                    # old_first_row = self.page.locator("#historiaCiv tbody tr").first.inner_text()
+                                    
                                     cuaderno_select.select_option(c_id)
-                                    self.page.wait_for_timeout(1500) # Wait for reload
+                                    # Wait for network idle or a specific delay to ensure AJAX request starts and finishes
+                                    # self.page.wait_for_load_state("networkidle") # Often flaky on SPAs
+                                    self.page.wait_for_timeout(3000) # Increased from 1500 to 3000 to be safer
                                 
                                 c_data = {
                                     "id": c_id, 
@@ -319,12 +353,15 @@ class CivilScraper(BaseScraper):
 
                                 # 7.2 Extract Litigantes
                                 try:
+                                    # Click tab
                                     self.page.click("a[href='#litigantesCiv']")
-                                    self.page.wait_for_timeout(1000)
+                                    # Wait for tab content to be visible
+                                    self.page.locator("#litigantesCiv").wait_for(state="visible", timeout=3000)
+                                    
                                     lits = self.page.evaluate("""
                                         () => {
                                             const rows = document.querySelectorAll('#litigantesCiv tbody tr, #litigantesCiv table tr');
-                                            return Array.from(rows).slice(0, 15).map(row => {
+                                            return Array.from(rows).map(row => {
                                                 const cells = row.querySelectorAll('td');
                                                 if (cells.length >= 2) {
                                                     return {
@@ -345,11 +382,17 @@ class CivilScraper(BaseScraper):
                                 # 7.3 Extract Historia
                                 try:
                                     self.page.click("a[href='#historiaCiv']")
-                                    self.page.wait_for_timeout(1000)
+                                    # Wait for tab content
+                                    self.page.locator("#historiaCiv").wait_for(state="visible", timeout=3000)
+                                    
+                                    # Wait for at least one row if possible, but it might be empty
+                                    # self.page.locator("#historiaCiv tbody tr").first.wait_for(state="attached", timeout=2000)
+
                                     hist = self.page.evaluate("""
                                         () => {
                                             const rows = document.querySelectorAll('#historiaCiv tbody tr, #historiaCiv table tr');
-                                            return Array.from(rows).slice(0, 40).map(row => {
+                                            // Increased limit from 40 to 100 to capture more history
+                                            return Array.from(rows).slice(0, 100).map(row => {
                                                 const cells = row.querySelectorAll('td');
                                                 if (cells.length >= 3) {
                                                     return {
@@ -417,11 +460,20 @@ class CivilScraper(BaseScraper):
             # Si no se encontraron resultados, retornar datos básicos
             if not resultados:
                 self.logger.info("No se encontraron resultados estructurados")
+                # Ensure we have a valid url to return
+                current_url = self.page.url
+                
+                # Check if we were just blocked or it was a genuine "no results"
+                if "home" in current_url and "index" in current_url:
+                     # We might have failed to even search
+                     pass
+
                 resultados = [{
                     "rol": f"C-{rol_num}-{rol_year}",
                     "tribunal": "Consulta realizada en PJUD",
                     "caratula": "Pendiente de verificación manual",
                     "materia": "",
+                    "url": current_url,
                     "fecha_ingreso": "",
                     "estado_administrativo": "",
                     "procedimiento": "",
@@ -434,7 +486,7 @@ class CivilScraper(BaseScraper):
             
             return {
                 "status": "success",
-                "url": consulta_url,
+                "url": self.page.url,
                 "title": self.page.title(),
                 "data": resultados
             }
@@ -450,6 +502,7 @@ class CivilScraper(BaseScraper):
                 "tribunal": "1° Juzgado Civil de Santiago (Datos Provisionales)",
                 "caratula": f"CONSULTA / {search_query if search_query else 'CAUSA'}",
                 "materia": "Pendiente de verificación en PJUD",
+                "url": url,
                 "fecha_ingreso": ""
             }]
             

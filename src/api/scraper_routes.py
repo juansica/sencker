@@ -41,6 +41,7 @@ class TaskResponse(BaseModel):
     search_query: Optional[str]
     result: Optional[dict]
     error: Optional[str]
+    progress_message: Optional[str] = None
     screenshot_path: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -98,8 +99,13 @@ async def run_scraper_task(task_id: str, db_url: str) -> None:
         
         try:
             # Run the actual scraper
-            def _run_sync_scraper(query: Optional[str], params_json: Optional[str]) -> dict:
+            # Run the actual scraper
+            def _run_sync_scraper(query: Optional[str], params_json: Optional[str], task_id_arg: str, db_url_arg: str, loop_arg) -> dict:
                 from src.scrapers.civil_scraper import CivilScraper
+                import asyncio
+                from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+                from sqlalchemy.orm import sessionmaker
+                from sqlalchemy import update
                 
                 corte_id = "0"
                 tribunal_id = "0"
@@ -111,13 +117,35 @@ async def run_scraper_task(task_id: str, db_url: str) -> None:
                             tribunal_id = params.get("tribunal_id", "0")
                     except:
                         pass
-                
+
+                # Callback for progress updates
+                def on_progress(msg: str):
+                    async def _update_db():
+                        # Ephemeral connection for progress update
+                        engine_update = create_async_engine(db_url_arg)
+                        async_session_update = sessionmaker(engine_update, class_=AsyncSession, expire_on_commit=False)
+                        async with async_session_update() as sess:
+                            await sess.execute(
+                                update(ScrapingTask)
+                                .where(ScrapingTask.id == task_id_arg)
+                                .values(progress_message=msg)
+                            )
+                            await sess.commit()
+                        await engine_update.dispose()
+
+                    # Schedule on main loop
+                    asyncio.run_coroutine_threadsafe(_update_db(), loop_arg)
+
                 with CivilScraper() as scraper:
-                    return scraper.run(search_query=query, corte_id=corte_id, tribunal_id=tribunal_id)
+                    return scraper.run(search_query=query, corte_id=corte_id, tribunal_id=tribunal_id, on_progress=on_progress)
 
             loop = asyncio.get_running_loop()
-            scraper_result = await loop.run_in_executor(None, _run_sync_scraper, task.search_query, task.search_params)
+            scraper_result = await loop.run_in_executor(None, _run_sync_scraper, task.search_query, task.search_params, task.id, db_url, loop)
             
+            # Check for scraper internal error
+            if scraper_result.get("status") == "error":
+                raise Exception(scraper_result.get("error", "Unknown scraper error"))
+
             # --- PROCESS RESULTS & CREATE SENTENCIAS ---
             if "data" in scraper_result and isinstance(scraper_result["data"], list):
                 # Get user organization
@@ -165,6 +193,8 @@ async def run_scraper_task(task_id: str, db_url: str) -> None:
                                 tribunal=item.get("tribunal", "Desconocido"),
                                 caratula=item.get("caratula"),
                                 materia=item.get("materia"),
+                                url=item.get("url"),
+                                scraping_task_id=task_id,
                                 fecha_ingreso=fecha_ingreso or datetime.utcnow(),
                                 estado=SentenciaStatus.ACTIVA,
                                 # New detailed fields from PJUD modal
@@ -185,6 +215,8 @@ async def run_scraper_task(task_id: str, db_url: str) -> None:
                             print(f"[DEBUG] Updating existing Sentencia {rol}")
                             existing_sentencia.tribunal = item.get("tribunal", existing_sentencia.tribunal)
                             existing_sentencia.caratula = item.get("caratula", existing_sentencia.caratula)
+                            existing_sentencia.url = item.get("url", existing_sentencia.url)
+                            existing_sentencia.scraping_task_id = task_id
                             existing_sentencia.estado_administrativo = item.get("estado_administrativo")
                             existing_sentencia.procedimiento = item.get("procedimiento")
                             existing_sentencia.ubicacion = item.get("ubicacion")

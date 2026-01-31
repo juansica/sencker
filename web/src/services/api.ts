@@ -57,6 +57,7 @@ export interface ScrapingTask {
     search_query: string | null;
     result: Record<string, unknown> | null;
     error: string | null;
+    progress_message: string | null;
     screenshot_path: string | null;
     created_at: string;
     started_at: string | null;
@@ -154,6 +155,8 @@ export interface Sentencia {
     caratula?: string;
     materia?: string;
     estado: SentenciaStatus;
+    url?: string | null;
+    scraping_task_id?: string | null;
     fecha_ingreso?: string;
     // Detailed PJUD info
     estado_administrativo?: string;
@@ -205,5 +208,9 @@ export const sentenciaApi = {
 
     async getStats(): Promise<DashboardLegalStats> {
         return apiRequest<DashboardLegalStats>('/api/sentencias/stats');
+    },
+
+    async getLogs(id: string): Promise<any> {
+        return apiRequest(`/api/sentencias/${id}/logs`);
     }
 };

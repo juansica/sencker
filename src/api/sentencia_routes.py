@@ -266,3 +266,67 @@ async def delete_sentencia(
     # Soft delete (ARCHIVADA) was causing items to remain in the list view.
     await db.delete(sentencia)
     await db.commit()
+
+
+@router.get("/{sentencia_id}/logs")
+async def get_sentencia_logs(
+    sentencia_id: str,
+    user: User = Depends(allow_member),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get scraping task logs for a Sentencia."""
+    from src.database.models import ScrapingTask
+    import json
+    
+    # Get sentencia
+    result = await db.execute(
+        select(Sentencia).where(
+            Sentencia.id == sentencia_id,
+            Sentencia.organization_id == user.organization_id
+        )
+    )
+    sentencia = result.scalar_one_or_none()
+    
+    if not sentencia:
+        raise HTTPException(status_code=404, detail="Sentencia not found")
+    
+    if not sentencia.scraping_task_id:
+        return {
+            "status": "no_task",
+            "message": "No scraping task associated with this sentencia"
+        }
+    
+    # Get scraping task
+    task_result = await db.execute(
+        select(ScrapingTask).where(ScrapingTask.id == sentencia.scraping_task_id)
+    )
+    task = task_result.scalar_one_or_none()
+    
+    if not task:
+        return {
+            "status": "task_not_found",
+            "message": "Scraping task not found"
+        }
+    
+    # Parse result if it's a JSON string
+    result_data = None
+    if task.result:
+        try:
+            result_data = json.loads(task.result) if isinstance(task.result, str) else task.result
+        except:
+            result_data = {"raw": task.result}
+    
+    return {
+        "status": "success",
+        "task": {
+            "id": task.id,
+            "status": task.status.value,
+            "search_query": task.search_query,
+            "progress_message": task.progress_message,
+            "error": task.error,
+            "result": result_data,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "started_at": task.started_at.isoformat() if task.started_at else None,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None
+        }
+    }

@@ -22,6 +22,7 @@ export function SentenciasPage() {
     const [detailTab, setDetailTab] = useState<'info' | 'litigantes' | 'historia'>('info');
     const [syncingId, setSyncingId] = useState<string | null>(null);
     const [activeCuadernoId, setActiveCuadernoId] = useState<string | null>(null);
+    const [logsModal, setLogsModal] = useState<{ visible: boolean; logs: any | null }>({ visible: false, logs: null });
 
     useEffect(() => {
         loadSentencias();
@@ -48,14 +49,16 @@ export function SentenciasPage() {
         }
     }
 
+    const [progressMsg, setProgressMsg] = useState<string | null>(null);
+
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
         setSearching(true);
+        setProgressMsg('Iniciando búsqueda...');
 
         try {
-            // 1. Iniciar tarea de scraping
-            // Updated format: C-{ROL}-{YEAR}
+            // 1. Iniciar tarea calculando query
             const query = `C-${rolInput}-${yearInput}`;
 
             const task = await scraperApi.run('civil', query, {
@@ -67,6 +70,11 @@ export function SentenciasPage() {
             const checkStatus = async () => {
                 const status = await scraperApi.getStatus(task.id);
 
+                // Update progress message
+                if (status.progress_message) {
+                    setProgressMsg(status.progress_message);
+                }
+
                 if (status.status === 'completed') {
                     await loadSentencias();
                     setSearching(false);
@@ -75,9 +83,11 @@ export function SentenciasPage() {
                     setYearInput(new Date().getFullYear().toString());
                     setSelectedCorte("0");
                     setSelectedTribunal("0");
+                    setProgressMsg(null);
                 } else if (status.status === 'failed') {
                     setError(`Error en búsqueda: ${status.error}`);
                     setSearching(false);
+                    setProgressMsg(null);
                 } else {
                     // Seguir esperando
                     setTimeout(checkStatus, 1000);
@@ -90,6 +100,7 @@ export function SentenciasPage() {
             console.error(err);
             setError('Error al iniciar búsqueda en PJUD.');
             setSearching(false);
+            setProgressMsg(null);
         }
     };
 
@@ -105,15 +116,20 @@ export function SentenciasPage() {
         }
     };
 
+
+
+    // ... (keep handleDelete)
+
     const handleSync = async (causa: Sentencia) => {
         setSyncingId(causa.id);
         setError(null);
+        // We can use a toast or small indicator for sync progress, but for now just use fetching
 
         try {
             // Start scraping with the same ROL
             const task = await scraperApi.run('civil', causa.rol, {
-                corte_id: "0", // Sync usually implies scraping fresh, but maybe we should store the original corte/tribunal?
-                tribunal_id: "0" // For now default to 0 (Todos) for sync to be safe, or we could ask user?
+                corte_id: "0",
+                tribunal_id: "0"
             });
 
             // Poll for completion
@@ -232,9 +248,24 @@ export function SentenciasPage() {
                                     Cancelar
                                 </button>
                                 <button type="submit" className="btn-primary" disabled={searching}>
-                                    {searching ? 'Buscando en PJUD...' : 'Buscar y Agregar'}
+                                    {searching ? 'Buscando...' : 'Buscar y Agregar'}
                                 </button>
                             </div>
+
+                            {searching && (
+                                <div style={{
+                                    marginTop: '20px',
+                                    padding: '15px',
+                                    backgroundColor: '#f8f9fa',
+                                    borderRadius: '6px',
+                                    border: '1px solid #dee2e6',
+                                    textAlign: 'center'
+                                }}>
+                                    <div className="spinner" style={{ margin: '0 auto 10px' }}></div>
+                                    <p style={{ fontWeight: 500, color: '#495057' }}>{progressMsg || 'Conectando con PJUD...'}</p>
+                                    <p style={{ fontSize: '0.85rem', color: '#6c757d' }}>Esto puede tomar unos segundos.</p>
+                                </div>
+                            )}
                         </form>
                     </div>
                 </div>
@@ -269,7 +300,21 @@ export function SentenciasPage() {
                         <tbody>
                             {sentencias.map((s) => (
                                 <tr key={s.id}>
-                                    <td className="font-mono">{s.rol}</td>
+                                    <td className="font-mono">
+                                        {s.url ? (
+                                            <a
+                                                href={s.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ textDecoration: 'underline', color: 'var(--primary)', fontWeight: 500 }}
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                {s.rol}
+                                            </a>
+                                        ) : (
+                                            s.rol
+                                        )}
+                                    </td>
                                     <td>{s.tribunal}</td>
                                     <td>{s.materia || '-'}</td>
                                     <td>
@@ -304,7 +349,21 @@ export function SentenciasPage() {
                                         >
                                             {syncingId === s.id ? '⏳' : '🔄'}
                                         </button>
-                                        <button className="btn-icon" title="Agregar plazo">📅</button>
+                                        <button
+                                            className="btn-icon"
+                                            title="Ver logs del scraper"
+                                            onClick={async () => {
+                                                try {
+                                                    const logs = await sentenciaApi.getLogs(s.id);
+                                                    setLogsModal({ visible: true, logs });
+                                                } catch (err) {
+                                                    console.error(err);
+                                                    setError('Error al cargar logs');
+                                                }
+                                            }}
+                                        >
+                                            📋
+                                        </button>
                                         <button
                                             className="btn-icon btn-danger"
                                             title="Eliminar causa"
@@ -456,6 +515,79 @@ export function SentenciasPage() {
                     </div>
                 );
             })()}
+
+            {logsModal.visible && (
+                <div className="modal-overlay">
+                    <div className="modal" style={{ maxWidth: '700px', maxHeight: '80vh', overflow: 'auto' }}>
+                        <div className="modal-header">
+                            <h2>📋 Logs del Scraper</h2>
+                            <button className="modal-close" onClick={() => setLogsModal({ visible: false, logs: null })}>×</button>
+                        </div>
+
+                        {logsModal.logs?.status === 'no_task' ? (
+                            <div style={{ padding: '20px', textAlign: 'center', color: '#888' }}>
+                                <p>No hay logs disponibles para esta causa.</p>
+                                <p style={{ fontSize: '0.9rem' }}>Esta causa no tiene un scraping task asociado.</p>
+                            </div>
+                        ) : logsModal.logs?.status === 'success' && logsModal.logs?.task ? (
+                            <div style={{ padding: '20px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                                    <div>
+                                        <strong>Estado:</strong>{' '}
+                                        <span className={`badge badge-${logsModal.logs.task.status === 'completed' ? 'activa' : logsModal.logs.task.status === 'failed' ? 'archivada' : 'suspendida'}`}>
+                                            {logsModal.logs.task.status}
+                                        </span>
+                                    </div>
+                                    <div><strong>Query:</strong> {logsModal.logs.task.search_query || '-'}</div>
+                                    <div><strong>Creado:</strong> {logsModal.logs.task.created_at ? new Date(logsModal.logs.task.created_at).toLocaleString('es-CL') : '-'}</div>
+                                    <div><strong>Iniciado:</strong> {logsModal.logs.task.started_at ? new Date(logsModal.logs.task.started_at).toLocaleString('es-CL') : '-'}</div>
+                                    <div><strong>Completado:</strong> {logsModal.logs.task.completed_at ? new Date(logsModal.logs.task.completed_at).toLocaleString('es-CL') : '-'}</div>
+                                </div>
+
+                                {logsModal.logs.task.progress_message && (
+                                    <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#e7f3ff', borderRadius: '4px', border: '1px solid #b3d9ff' }}>
+                                        <strong>Último mensaje:</strong> {logsModal.logs.task.progress_message}
+                                    </div>
+                                )}
+
+                                {logsModal.logs.task.error && (
+                                    <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#ffe7e7', borderRadius: '4px', border: '1px solid #ffb3b3' }}>
+                                        <strong>Error:</strong> {logsModal.logs.task.error}
+                                    </div>
+                                )}
+
+                                {logsModal.logs.task.result && (
+                                    <div>
+                                        <h3 style={{ marginBottom: '10px' }}>Resultado:</h3>
+                                        <pre style={{
+                                            backgroundColor: '#f5f5f5',
+                                            padding: '15px',
+                                            borderRadius: '4px',
+                                            overflow: 'auto',
+                                            maxHeight: '300px',
+                                            fontSize: '0.85rem',
+                                            color: '#333'
+                                        }}>
+                                            {JSON.stringify(logsModal.logs.task.result, null, 2)}
+                                        </pre>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div style={{ padding: '20px', textAlign: 'center' }}>
+                                <div className="spinner"></div>
+                                <p>Cargando logs...</p>
+                            </div>
+                        )}
+
+                        <div className="form-actions">
+                            <button className="btn-secondary" onClick={() => setLogsModal({ visible: false, logs: null })}>
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
